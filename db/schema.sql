@@ -9,7 +9,7 @@ CREATE TABLE users (
 CREATE TABLE blooms (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     sender_id INT NOT NULL REFERENCES users(id),
-    content TEXT NOT NULL,
+    content TEXT NOT NULL CHECK (CHAR_LENGTH(content) <= 280),
     send_timestamp TIMESTAMP NOT NULL
 );
 
