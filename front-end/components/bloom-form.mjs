@@ -27,6 +27,14 @@ async function handleBloomSubmit(event) {
   const textarea = form.querySelector("textarea");
   const content = textarea.value.trim();
 
+  const maxLength = parseInt(textarea.getAttribute("maxlength"), 10);
+
+  if(Number.isFinite(maxLength) && content.length > maxLength){
+    alert(`your message is too long! Limit is ${maxLength}`);
+    textarea.focus();
+    return;
+  }
+
   try {
     // Make form inert while we call the back end
     form.inert = true;
