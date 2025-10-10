@@ -52,9 +52,6 @@ function createProfile(template, {profileData, whoToFollow, isLoggedIn}) {
       const followButton = wtfElement.querySelector("button[data-action='follow']");
       followButton.setAttribute("data-username", userToFollow.username);
       followButton.addEventListener("click", handleFollow);
-      const unfollowButton = wtfElement.querySelector("button[data-action='unfollow']");
-      unfollowButton.setAttribute("data-username", userToFollow.username);
-      unfollowButton.addEventListener("click", handleUnfollow);
 
       if (!isLoggedIn) {
         followButton.style.display = "none";
