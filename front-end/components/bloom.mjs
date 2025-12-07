@@ -1,3 +1,4 @@
+import {apiService} from "../index.mjs"
 /**
  * Create a bloom component
  * @param {string} template - The ID of the template to clone
@@ -21,6 +22,10 @@ const createBloom = (template, bloom) => {
   const bloomTimeLink = bloomFrag.querySelector("a:has(> [data-time])");
   const bloomContent = bloomFrag.querySelector("[data-content]");
 
+  const rebloomEl = bloomFrag.querySelector("[data-rebloom]")
+  const rebloomCount = bloomFrag.querySelector("[data-rebloom-count]");
+  const rebloomBtn = bloomFrag.querySelector("[data-rebloom-button]");
+
   bloomArticle.setAttribute("data-bloom-id", bloom.id);
   bloomUsername.setAttribute("href", `/profile/${bloom.sender}`);
   bloomUsername.textContent = bloom.sender;
@@ -30,6 +35,34 @@ const createBloom = (template, bloom) => {
     ...bloomParser.parseFromString(_formatHashtags(bloom.content), "text/html")
       .body.childNodes
   );
+
+  rebloomBtn.addEventListener("click", async (e) =>  handleRebloomClick(e, bloom));
+  // Show "originally bloomed by"
+  if (bloom.rebloomed_by) {
+    rebloomEl.replaceChildren();
+
+    const originalBloomerLink = document.createElement("a");
+    originalBloomerLink.href = `/profile/${bloom.rebloom_from}`;
+    originalBloomerLink.textContent = bloom.rebloom_from;
+
+    originalBloomerLink.style.fontWeight = "bold";
+
+    rebloomEl.append( "Originally bloomed by ", originalBloomerLink );
+  } else {
+    rebloomEl.hidden = true;
+  }
+
+  // Count how many times it has been rebloomed
+  const count = Number(bloom.rebloom_count || 0);
+
+  if (rebloomCount) {
+    if (count > 0) {
+      rebloomCount.hidden = false;
+      rebloomCount.textContent = `Rebloomed ${String(count)} times`;
+    } else {
+      rebloomCount.hidden = true;
+    }
+  }
 
   return bloomFrag;
 };
@@ -83,5 +116,27 @@ function _formatTimestamp(timestamp) {
     return "";
   }
 }
+
+async function handleRebloomClick(event, bloom) {
+  event.preventDefault();
+  const button = event.currentTarget;
+  const originalText = button.textContent;
+
+  try {
+    // Make button inert while calling backend
+    button.inert = true;
+    button.textContent = "Reblooming...";
+
+    await apiService.postRebloom(bloom);
+
+  } catch (error) {
+    console.error("Rebloom failed:", error);
+  } finally {
+    // Restore UI state
+    button.textContent = originalText;
+    button.inert = false;
+  }
+}
+
 
 export {createBloom};
