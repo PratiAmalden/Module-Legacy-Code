@@ -13,6 +13,9 @@ class Bloom:
     sender: User
     content: str
     sent_timestamp: datetime.datetime
+    rebloom_from: Optional[str] = None
+    rebloomed_by: Optional[any] = None
+    rebloom_count: int = 0
 
 
 def add_bloom(*, sender: User, content: str) -> Bloom:
@@ -36,6 +39,62 @@ def add_bloom(*, sender: User, content: str) -> Bloom:
                 dict(hashtag=hashtag, bloom_id=bloom_id),
             )
 
+def add_rebloom(*, rebloomer: User, original_bloom_id: int) -> Optional[Bloom]:
+    # 1. Fetch original bloom from DB
+
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT blooms.id, users.id, users.username, content, send_timestamp
+            FROM blooms
+            INNER JOIN users ON users.id = blooms.sender_id
+            WHERE blooms.id =%s
+            """,
+            (original_bloom_id,)
+        )
+        row = cur.fetchone()
+
+    if row is None:
+        return None
+    
+    original_id, original_sender_id, original_sender_username, original_content, original_timestamp = row
+
+    # 2. New bloom id & timestamp
+    now = datetime.datetime.now(tz=datetime.UTC)
+    new_bloom_id = int(now.timestamp() * 1000000)
+
+    # 3. Insert new bloom as a "repost" of the original
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO blooms (id, sender_id, content, send_timestamp, rebloom_from, rebloom_by)
+            VALUES (%(id)s, %(sender_id)s, %(content)s, %(timestamp)s, %(rebloom_from)s, %(rebloom_by)s)
+            """,
+            dict(
+                id=new_bloom_id,
+                sender_id=rebloomer.id,
+                content=original_content,
+                timestamp=now,
+                rebloom_from=original_bloom_id,
+                rebloom_by=rebloomer.id,
+            ),
+        )
+
+        # 4. Increment rebloom count on the original
+        cur.execute(
+            "UPDATE blooms SET rebloom_count = rebloom_count + 1 WHERE id = %(original)s",
+            dict(original=original_bloom_id),
+        )
+
+    # 5. Return the new repost bloom
+    return Bloom(
+        id=new_bloom_id,
+        sender=rebloomer,
+        content=original_content,
+        sent_timestamp=now,
+        rebloomed_by=rebloomer,
+        rebloom_count=0,
+    )
 
 def get_blooms_for_user(
     username: str, *, before: Optional[int] = None, limit: Optional[int] = None
@@ -54,11 +113,16 @@ def get_blooms_for_user(
 
         cur.execute(
             f"""SELECT
-              blooms.id, users.username, content, send_timestamp
+              blooms.id, users.username, blooms.content, blooms.send_timestamp,
+              blooms.rebloom_from, rebloomer.username, original_sender.username, blooms.rebloom_count
             FROM
-              blooms INNER JOIN users ON users.id = blooms.sender_id
+              blooms
+              INNER JOIN users ON users.id = blooms.sender_id
+              LEFT JOIN users AS rebloomer ON rebloomer.id = blooms.rebloom_by
+              LEFT JOIN blooms AS original_bloom ON original_bloom.id = blooms.rebloom_from
+              LEFT JOIN users AS original_sender ON original_sender.id = original_bloom.sender_id
             WHERE
-              username = %(sender_username)s
+              users.username = %(sender_username)s
               {before_clause}
             ORDER BY send_timestamp DESC
             {limit_clause}
@@ -68,13 +132,16 @@ def get_blooms_for_user(
         rows = cur.fetchall()
         blooms = []
         for row in rows:
-            bloom_id, sender_username, content, timestamp = row
+            bloom_id, sender_username, content, timestamp, rebloom_from_id, rebloomed_by_username, original_sender_username, rebloom_count = row
             blooms.append(
                 Bloom(
                     id=bloom_id,
                     sender=sender_username,
                     content=content,
                     sent_timestamp=timestamp,
+                    rebloom_from=original_sender_username,
+                    rebloomed_by=rebloomed_by_username,
+                    rebloom_count= rebloom_count or 0
                 )
             )
     return blooms
@@ -83,18 +150,30 @@ def get_blooms_for_user(
 def get_bloom(bloom_id: int) -> Optional[Bloom]:
     with db_cursor() as cur:
         cur.execute(
-            "SELECT blooms.id, users.username, content, send_timestamp FROM blooms INNER JOIN users ON users.id = blooms.sender_id WHERE blooms.id = %s",
+            """
+            SELECT blooms.id, users.username, blooms.content, blooms.send_timestamp, original_sender.username, blooms.rebloom_count
+            FROM 
+              blooms 
+              INNER JOIN users ON users.id = blooms.sender_id
+              LEFT JOIN users AS rebloomer ON rebloomer.id = blooms.rebloom_by 
+              LEFT JOIN blooms AS original_bloom on original_bloom.id = blooms.rebloom_from
+              LEFT JOIN users AS original_sender on original_sender.id = original_bloom.sender_id
+            WHERE blooms.id = %s
+            """,
             (bloom_id,),
         )
         row = cur.fetchone()
         if row is None:
             return None
-        bloom_id, sender_username, content, timestamp = row
+        bloom_id, sender_username, content, timestamp, rebloom_from_id, rebloomed_by_username, original_sender_username, rebloom_count = row
         return Bloom(
             id=bloom_id,
             sender=sender_username,
             content=content,
             sent_timestamp=timestamp,
+            rebloom_from=original_sender_username,
+            rebloomed_by=rebloomed_by_username,
+            rebloom_count= rebloom_count or 0,
         )
 
 
