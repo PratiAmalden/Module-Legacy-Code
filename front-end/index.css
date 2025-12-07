@@ -267,3 +267,17 @@ dialog {
 [hidden] {
   display: none !important;
 }
+
+/* rebloom info line */
+[data-rebloom] {
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+/* rebloom count */
+.rebloom-count {
+  font-size: 0.8rem;
+  color: var(--accent);
+  margin-left: auto;
+  margin-right: 2em;
+}
