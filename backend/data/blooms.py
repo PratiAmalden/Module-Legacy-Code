@@ -16,9 +16,6 @@ class Bloom:
 
 
 def add_bloom(*, sender: User, content: str) -> Bloom:
-    if len(content) > 280:
-        raise ValueError("Blooms are limited to 280 characters!")
-    
     hashtags = [word[1:] for word in content.split(" ") if word.startswith("#")]
 
     now = datetime.datetime.now(tz=datetime.UTC)
