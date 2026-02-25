@@ -224,9 +224,14 @@ async function postRebloom(bloom){
     }
     return data;
   } catch(error){
-    console.error("Rebloom failed:", error);
     return {success: false};
   }
+}
+
+async function getRebloomers(bloomId) {
+  const endpoint = `/bloom/${bloomId}/rebloomers`;
+  const rebloomers = await _apiRequest(endpoint)
+  return rebloomers
 }
 
 // ======= USER methods
@@ -310,6 +315,7 @@ const apiService = {
   postBloom,
   getBloomsByHashtag,
   postRebloom,
+  getRebloomers,
 
   // User methods
   getProfile,
