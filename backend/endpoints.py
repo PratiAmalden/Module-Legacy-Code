@@ -176,16 +176,27 @@ def send_rebloom():
     current_user = get_current_user()
     bloom_id = request.json["bloom_id"]
 
-    new_bloom = blooms.add_rebloom(
-        rebloomer=current_user,
-        original_bloom_id=bloom_id
-    )
-    if new_bloom is None:
-        return make_response(({"success": False, "message": "Original bloom not found"}, 400))
+    try:
+        blooms.add_rebloom(
+            rebloomer=current_user,
+            original_bloom_id=bloom_id
+        )
+    except ValueError as error:
+        return make_response({"success": False, "message": str(error)}, 400)
     
     return jsonify({
         "success": True,
     })
+
+@jwt_required(optional=True)
+def get_rebloomers(id_str):
+    try:
+        bloom_id = int(id_str)
+    except ValueError:
+        return make_response((f"Invalid bloom id", 400))
+    
+    rebloomers = blooms.get_rebloomers_for_bloom(bloom_id)
+    return jsonify(rebloomers)
 
 def get_bloom(id_str):
     try:
