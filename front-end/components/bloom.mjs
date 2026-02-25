@@ -1,4 +1,5 @@
 import {apiService} from "../index.mjs"
+import { handleErrorDialog } from "./error.mjs";
 /**
  * Create a bloom component
  * @param {string} template - The ID of the template to clone
@@ -37,35 +38,78 @@ const createBloom = (template, bloom) => {
   );
 
   rebloomBtn.addEventListener("click", async (e) =>  handleRebloomClick(e, bloom));
-  // Show "originally bloomed by"
-  if (bloom.rebloomed_by) {
-    rebloomEl.replaceChildren();
-
-    const originalBloomerLink = document.createElement("a");
-    originalBloomerLink.href = `/profile/${bloom.rebloom_from}`;
-    originalBloomerLink.textContent = bloom.rebloom_from;
-
-    originalBloomerLink.style.fontWeight = "bold";
-
-    rebloomEl.append( "Originally bloomed by ", originalBloomerLink );
-  } else {
-    rebloomEl.hidden = true;
-  }
-
-  // Count how many times it has been rebloomed
-  const count = Number(bloom.rebloom_count || 0);
-
-  if (rebloomCount) {
-    if (count > 0) {
-      rebloomCount.hidden = false;
-      rebloomCount.textContent = `Rebloomed ${String(count)} times`;
-    } else {
-      rebloomCount.hidden = true;
-    }
-  }
+  renderRebloom(rebloomEl, bloom);
+  setupRebloomCount(rebloomCount,rebloomCount, bloom);
 
   return bloomFrag;
 };
+
+function renderRebloom(container, bloom) {
+  if (!container) return;
+
+  if (!bloom.rebloomed_by) {
+    container.hidden = true;
+    return;
+  }
+
+  container.replaceChildren();
+
+  const originalBloomerLink = document.createElement("a");
+  originalBloomerLink.href = `/profile/${bloom.rebloom_from}`;
+  originalBloomerLink.textContent = bloom.rebloom_from;
+
+  originalBloomerLink.style.fontWeight = "bold";
+
+  container.append( "Originally bloomed by ", originalBloomerLink );
+}
+
+function setupRebloomCount(rebloomCount, article, bloom) {
+  if (!rebloomCount) return;
+
+  const count = Number(bloom.rebloom_count || 0);
+  const isRebloom = Boolean(bloom.rebloomed_by);
+
+  if (isRebloom || count === 0) {
+    rebloomCount.hidden = true;
+    return;
+  }
+
+  rebloomCount.hidden = false;
+  rebloomCount.style.cursor = "pointer";
+  rebloomCount.textContent = `Rebloomed ${String(count)} times (click to view)`;
+
+  rebloomCount.addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleRebloomers(article, rebloomCount, bloom.id);
+  });
+}
+
+async function toggleRebloomers(article, anchor, bloomId) {
+  const existing = article.querySelector("[data-rebloomers]");
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  try {
+    const usernames = await apiService.getRebloomers(bloomId);
+
+    const container = document.createElement("div");
+    container.dataset.rebloomers = "";
+    
+    usernames.forEach((name, idx) => {
+      if (idx > 0) container.append(", ");
+      const a = document.createElement("a");
+      a.href = `/profile/${name}`;
+      a.textContent = name;
+      container.append(a);
+    });
+
+    anchor.insertAdjacentElement("afterend", container);
+  } catch (error) {
+    handleErrorDialog(error)
+  }
+}
 
 function _formatHashtags(text) {
   if (!text) return text;
@@ -130,7 +174,7 @@ async function handleRebloomClick(event, bloom) {
     await apiService.postRebloom(bloom);
 
   } catch (error) {
-    console.error("Rebloom failed:", error);
+    handleErrorDialog(error)
   } finally {
     // Restore UI state
     button.textContent = originalText;
