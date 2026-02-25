@@ -94,6 +94,20 @@ def add_rebloom(*, rebloomer: User, original_bloom_id: int) -> Optional[Bloom]:
         rebloom_count=0,
     )
 
+def get_rebloomers_for_bloom(original_bloom_id: int) -> List[str]:
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT u.username
+            FROM blooms b
+            JOIN users u ON u.id = b.rebloom_by
+            WHERE b.rebloom_from = %s
+            ORDER BY b.send_timestamp DESC
+            """,
+            (original_bloom_id,),
+        )
+        return [row[0] for row in cur.fetchall()]
+
 def get_blooms_for_user(
     username: str, *, before: Optional[int] = None, limit: Optional[int] = None
 ) -> List[Bloom]:
