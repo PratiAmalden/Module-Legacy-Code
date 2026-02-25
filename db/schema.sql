@@ -10,13 +10,14 @@ CREATE TABLE blooms (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     sender_id INT NOT NULL REFERENCES users(id),
     content TEXT NOT NULL,
-    send_timestamp TIMESTAMP NOT NULL
+    send_timestamp TIMESTAMP NOT NULL,
+    rebloom_from BIGINT REFERENCES blooms(id),
+    rebloom_by INT REFERENCES users(id)
 );
 
-ALTER TABLE blooms
-ADD COLUMN rebloom_from BIGINT REFERENCES blooms(id),
-ADD COLUMN rebloom_by INT REFERENCES users(id),
-ADD COLUMN rebloom_count INT DEFAULT 0;
+CREATE UNIQUE INDEX unique_rebloom
+ON blooms (rebloom_from, rebloom_by)
+WHERE rebloom_from IS NOT NULL;
 
 CREATE TABLE follows (
     id SERIAL PRIMARY KEY,
