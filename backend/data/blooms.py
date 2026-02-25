@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from data.connection import db_cursor
 from data.users import User
 
+from psycopg2.errors import UniqueViolation
 
 @dataclass
 class Bloom:
@@ -40,7 +41,7 @@ def add_bloom(*, sender: User, content: str) -> Bloom:
             )
 
 def add_rebloom(*, rebloomer: User, original_bloom_id: int) -> Optional[Bloom]:
-    # 1. Fetch original bloom from DB
+    # Fetch original bloom from DB
 
     with db_cursor() as cur:
         cur.execute(
@@ -57,36 +58,33 @@ def add_rebloom(*, rebloomer: User, original_bloom_id: int) -> Optional[Bloom]:
     if row is None:
         return None
     
-    original_id, original_sender_id, original_sender_username, original_content, original_timestamp = row
+    _, _, _, original_content, _ = row
 
-    # 2. New bloom id & timestamp
+    # New bloom id & timestamp
     now = datetime.datetime.now(tz=datetime.UTC)
     new_bloom_id = int(now.timestamp() * 1000000)
 
-    # 3. Insert new bloom as a "repost" of the original
-    with db_cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO blooms (id, sender_id, content, send_timestamp, rebloom_from, rebloom_by)
-            VALUES (%(id)s, %(sender_id)s, %(content)s, %(timestamp)s, %(rebloom_from)s, %(rebloom_by)s)
-            """,
-            dict(
-                id=new_bloom_id,
-                sender_id=rebloomer.id,
-                content=original_content,
-                timestamp=now,
-                rebloom_from=original_bloom_id,
-                rebloom_by=rebloomer.id,
-            ),
-        )
+    try:
+        # Insert new bloom as a "repost" of the original
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO blooms (id, sender_id, content, send_timestamp, rebloom_from, rebloom_by)
+                VALUES (%(id)s, %(sender_id)s, %(content)s, %(timestamp)s, %(rebloom_from)s, %(rebloom_by)s)
+                """,
+                dict(
+                    id=new_bloom_id,
+                    sender_id=rebloomer.id,
+                    content=original_content,
+                    timestamp=now,
+                    rebloom_from=original_bloom_id,
+                    rebloom_by=rebloomer.id,
+                ),
+            )
+    except UniqueViolation:
+        raise ValueError("You have already rebloomed this bloom.")
 
-        # 4. Increment rebloom count on the original
-        cur.execute(
-            "UPDATE blooms SET rebloom_count = rebloom_count + 1 WHERE id = %(original)s",
-            dict(original=original_bloom_id),
-        )
-
-    # 5. Return the new repost bloom
+    # Return the new rebloom
     return Bloom(
         id=new_bloom_id,
         sender=rebloomer,
@@ -114,7 +112,12 @@ def get_blooms_for_user(
         cur.execute(
             f"""SELECT
               blooms.id, users.username, blooms.content, blooms.send_timestamp,
-              blooms.rebloom_from, rebloomer.username, original_sender.username, blooms.rebloom_count
+              blooms.rebloom_from, rebloomer.username, original_sender.username,
+              (
+                SELECT COUNT(*)
+                FROM blooms r
+                WHERE r.rebloom_from = COALESCE(blooms.rebloom_from, blooms.id)
+              )
             FROM
               blooms
               INNER JOIN users ON users.id = blooms.sender_id
@@ -124,7 +127,7 @@ def get_blooms_for_user(
             WHERE
               users.username = %(sender_username)s
               {before_clause}
-            ORDER BY send_timestamp DESC
+            ORDER BY blooms.send_timestamp DESC
             {limit_clause}
             """,
             kwargs,
@@ -151,7 +154,12 @@ def get_bloom(bloom_id: int) -> Optional[Bloom]:
     with db_cursor() as cur:
         cur.execute(
             """
-            SELECT blooms.id, users.username, blooms.content, blooms.send_timestamp, original_sender.username, blooms.rebloom_count
+            SELECT blooms.id, users.username, blooms.content, blooms.send_timestamp, blooms.rebloom_from, rebloomer.username, original_sender.username,
+            (
+              SELECT COUNT(*) 
+              FROM blooms r
+              WHERE r.rebloom_from = COALESCE(blooms.rebloom_from, blooms.id)
+            ) AS rebloom_count
             FROM 
               blooms 
               INNER JOIN users ON users.id = blooms.sender_id
@@ -165,7 +173,7 @@ def get_bloom(bloom_id: int) -> Optional[Bloom]:
         row = cur.fetchone()
         if row is None:
             return None
-        bloom_id, sender_username, content, timestamp, rebloom_from_id, rebloomed_by_username, original_sender_username, rebloom_count = row
+        bloom_id, sender_username, content, timestamp, _, rebloomed_by_username, original_sender_username, rebloom_count = row
         return Bloom(
             id=bloom_id,
             sender=sender_username,
